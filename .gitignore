@@ -1,0 +1,183 @@
+
+
+written by: Dipesh Bhattarai
+Date: 01/06/2016
+
+-Searches user based on either their first name, last name or their login id.
+		-List the users that matches the search and display their First Name, Last Name and their Department
+-Disable user from active directory
+				1. Remove user from all the groups.
+							-copy all groups that user was assigend to notes: 
+							- add disabled date to notes
+				2. Hide user from Global Address Book.
+							-set external and internal OOO
+							-hide user from address book
+				3. Disable user:
+							-disable user account
+							-move to To be archived folder.
+	
+	TO DO: 
+	- pass OOO as parameter.and forward email address (if we need to forward emails to someone else in the organization)
+#>
+
+<#Usage
+Type User's first Name and Last Name or  User Name to find the user and follow the prompt:
+
+eg: if you want to delete "Donald Trump" type in "Donald" or "trump" or Username Dtrump.
+You can type partial names as well like Donal or Trum or dtru etc.
+1. Enter First and Last Name. This is the default mode. You do not have to type the whole names. A few initial letters works.
+
+.\Disable-HPUser.ps1 -FirstName Donald -LastName Trump
+.\Disable-HPUser.ps1 -First Name "Don" -lastname "Tru"
+
+Searches for User with above initial string in their names.
+#>
+
+
+
+[cmdletbinding(DefaultParameterSetName="FilterUsingName")] 
+   Param(
+        [Parameter(Mandatory=$true,ParameterSetName="FilterUsingName",Position=0)]
+        [string]$FirstName,
+        [Parameter(Mandatory=$true,ParameterSetName="FilterUsingName",Position=1)]
+        [string]$Lastname,
+        [Parameter(Mandatory=$true,ParameterSetName="FilterUsingLogin",Position=0)]
+        [string]$LoginName,
+        [string]$OOOExternal=" default Internal ooo",
+        [string]$OOOInternal=" default External OOO",
+        [string]$OOOforwardaddress
+        )#end of param
+
+cls
+
+function Remove-HPUserGroups
+{
+	$membership=@()
+	$date=get-date
+	$ADserver = (Get-ADDomainController).Name
+	$psExchangeConfigName = 'microsoft.exchange'
+	$psExchangeConnURI = 'http://FQDN/powershell'
+	$exchangeCredential = $Null
+	$moveto=Get-ADOrganizationalUnit -filter "name -eq '<Deleted Folder>'"
+    $user =$args[0]
+  
+
+    Write-host "User's identity is $user"
+	$usergrp = Get-ADPrincipalGroupMembership -Identity $user.SamAccountName
+
+	foreach($grp in $usergrp){
+			if($grp.name -ne 'Domain Users'){
+            $membership+= $grp.name+";`r`n"
+            Remove-ADGroupMember -Identity $grp.name -Members $user -confirm:$false
+
+            }
+        }
+        Write-host "$membership"
+
+	if( $user.mail){
+               
+			
+            $OOOintToSet=$user.Name + $OOOInternal
+            $OOOExtToSet=$user.Name + $OOOExternal
+
+            if($OOOforwardaddress){
+              $OOOintToSet= "Please forward your queries to $OOOForwardaddress.<BR> Thank you.<BR>" 
+              $OOOExtToSet= "Please forward your queries to $OOOForwardaddress.<BR> Thank you.<BR>" 
+                    
+            }
+      #if authentication is required to run exchange command#
+			<# $UserCred= Get-Credential
+			$session=New-PSSession -ConfigurationName Microsoft.Exchange -connectionUri http://<ServerName>/Powershell -Authentication Kerberos -Credential $UserCred
+			Import-PSSession $session
+			Set-MailboxAutoReplyConfiguration $user.SamAccountName -AutoReplyState enabled -ExternalAudience all -InternalMessage '$OOOintToSet' -ExternalMessage '$OOOExtToSet'
+			Remove-PSSession $Session
+			#>
+			$sb = [ScriptBlock]::Create("Set-MailboxAutoReplyConfiguration $($user.SamAccountName) -AutoReplyState enabled -ExternalAudience all -InternalMessage '$($OOOintToSet)' -ExternalMessage '$OOOintToSet'")
+            $result= Invoke-Command -ScriptBlock $sb -ConnectionUri $psExchangeConnURI -ConfigurationName $psExchangeConfigName			
+         if($result){
+            Write-host "AutoReply set for user $user.DisplayName"
+            }
+
+        
+		}
+    else{
+			Write-host "User does not have mailbox enabled."
+	   }
+
+	   #Write all group membership on notes section. ( to protect from accidental deletion)
+	Set-aduser -Identity $user.SamAccountName -replace @{info="Account Disabled On $(get-date) `r`n $membership"; msExchHideFromAddressLists="TRUE"}
+    Move-ADObject -identity $user.distinguishedName -TargetPath $moveto
+	Disable-ADAccount -Identity $user.SamAccountName
+
+
+}
+
+
+$found=""
+$filter="(SAMaccountName -notlike '*Admin' -and enabled -eq '$true') "
+
+if(!$LoginName ){
+$FirstName+="*"
+$lastName+="*"
+$filter+="-and (GivenName -like '$firstname' -and Surname -like '$LastName') "
+}
+
+else{
+    $LoginName+="*"
+    $filter+="-and  SAMaccountName -like '$LoginName'"
+    }
+
+
+$usersfound=@()
+#$found=Get-ADUser -filter {(displayName -like $usertofind -or SAMAccountID -like $usertofind -or lastName -like $usertofind)  -and (SAMaccountName -notlike "*Admin" -and Enabled -eq $True)} -Properties *
+$filter
+$found=Get-ADUser -filter $filter -Properties *
+
+if($found){
+	$i=1;
+	foreach($Users in $found){
+			$usersfound+=New-Object -TypeName PSObject -Property @{
+                SN=$i++
+                Name=$Users.DisplayName
+                Department=$Users.department
+                AccountID= $Users.SAMaccountName
+            }
+	}
+	if($usersfound.count -gt 1){	
+		$usersfound|Select SN,Name,AccountID,Department|ft
+		$choice= Read-Host -Prompt 'Enter the SN of the user that you want to delete'
+
+		if([int]$choice -ge 1 -and [int]$choice -le ($usersfound.count)){
+           
+			$found[[int]$choice-1]|select DisplayName,Department,mail,whenCreated,Title,StreetAddress,State,Postalcode,info,DistinguishedName|fl
+      
+			$confirm =read-host "Are you sure you want to delete the following user? (y/n)"
+			if($confirm.ToUpper() -eq "Y"-or $confirm.ToUpper() -eq "YES"){
+
+				Remove-HPUserGroups $found[$choice-1]	
+				
+			}
+			else{ 
+			Read-Host "Press any key to quit"
+			break
+			}
+
+		}
+	}
+	else{
+	
+	    Write-Host "Deleting following user..."
+		$found|select DisplayName,Department,mail,whenCreated,Title,StreetAddress,State,Postalcode,info,DistinguishedName|fl
+	    $confirm=(Read-host "Are you sure you want to delete the following user? (y/n)")    
+		if($confirm.ToUpper() -eq "Y"-or $confirm.ToUpper() -eq "YES"){
+			Remove-HPUserGroups $found
+			
+		}
+	}
+}
+else{
+		Read-host "User Not found..Press any key to quit.."
+	}
+
+
+
