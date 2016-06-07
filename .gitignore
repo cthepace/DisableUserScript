@@ -3,36 +3,6 @@
 written by: Dipesh Bhattarai
 Date: 01/06/2016
 
--Searches user based on either their first name, last name or their login id.
-		-List the users that matches the search and display their First Name, Last Name and their Department
--Disable user from active directory
-				1. Remove user from all the groups.
-							-copy all groups that user was assigend to notes: 
-							- add disabled date to notes
-				2. Hide user from Global Address Book.
-							-set external and internal OOO
-							-hide user from address book
-				3. Disable user:
-							-disable user account
-							-move to To be archived folder.
-	
-	TO DO: 
-	- pass OOO as parameter.and forward email address (if we need to forward emails to someone else in the organization)
-#>
-
-<#Usage
-Type User's first Name and Last Name or  User Name to find the user and follow the prompt:
-
-eg: if you want to delete "Donald Trump" type in "Donald" or "trump" or Username Dtrump.
-You can type partial names as well like Donal or Trum or dtru etc.
-1. Enter First and Last Name. This is the default mode. You do not have to type the whole names. A few initial letters works.
-
-.\Disable-HPUser.ps1 -FirstName Donald -LastName Trump
-.\Disable-HPUser.ps1 -First Name "Don" -lastname "Tru"
-
-Searches for User with above initial string in their names.
-#>
-
 
 
 [cmdletbinding(DefaultParameterSetName="FilterUsingName")] 
