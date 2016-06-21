@@ -1,10 +1,6 @@
-
-
-written by: Dipesh Bhattarai
-Date: 01/06/2016
-
-
-
+<#
+Written by: Dipesh Bhattarai
+#>
 [cmdletbinding(DefaultParameterSetName="FilterUsingName")] 
    Param(
         [Parameter(Mandatory=$true,ParameterSetName="FilterUsingName",Position=0)]
@@ -13,22 +9,23 @@ Date: 01/06/2016
         [string]$Lastname,
         [Parameter(Mandatory=$true,ParameterSetName="FilterUsingLogin",Position=0)]
         [string]$LoginName,
-        [string]$OOOExternal=" default Internal ooo",
-        [string]$OOOInternal=" default External OOO",
+	[boolean]$isadmin,
+        [string]$OOOExternal=" no longer work with hall and prior. Contact DON/Manager for any queries.",
+        [string]$OOOInternal=" no longer work with hall and prior. Contact DON/Manager for any queries.",
         [string]$OOOforwardaddress
         )#end of param
 
 cls
 
-function Remove-HPUserGroups
+function Remove-UserGroups
 {
 	$membership=@()
 	$date=get-date
 	$ADserver = (Get-ADDomainController).Name
 	$psExchangeConfigName = 'microsoft.exchange'
-	$psExchangeConnURI = 'http://FQDN/powershell'
+	$psExchangeConnURI = 'http://dc1exch1.hallprior-agedcare.com.au/powershell'
 	$exchangeCredential = $Null
-	$moveto=Get-ADOrganizationalUnit -filter "name -eq '<Deleted Folder>'"
+	$moveto=Get-ADOrganizationalUnit -filter "name -eq 'ToBeArchived'"
     $user =$args[0]
   
 
@@ -46,23 +43,8 @@ function Remove-HPUserGroups
 
 	if( $user.mail){
                
-			
-            $OOOintToSet=$user.Name + $OOOInternal
-            $OOOExtToSet=$user.Name + $OOOExternal
 
-            if($OOOforwardaddress){
-              $OOOintToSet= "Please forward your queries to $OOOForwardaddress.<BR> Thank you.<BR>" 
-              $OOOExtToSet= "Please forward your queries to $OOOForwardaddress.<BR> Thank you.<BR>" 
-                    
-            }
-      #if authentication is required to run exchange command#
-			<# $UserCred= Get-Credential
-			$session=New-PSSession -ConfigurationName Microsoft.Exchange -connectionUri http://<ServerName>/Powershell -Authentication Kerberos -Credential $UserCred
-			Import-PSSession $session
-			Set-MailboxAutoReplyConfiguration $user.SamAccountName -AutoReplyState enabled -ExternalAudience all -InternalMessage '$OOOintToSet' -ExternalMessage '$OOOExtToSet'
-			Remove-PSSession $Session
-			#>
-			$sb = [ScriptBlock]::Create("Set-MailboxAutoReplyConfiguration $($user.SamAccountName) -AutoReplyState enabled -ExternalAudience all -InternalMessage '$($OOOintToSet)' -ExternalMessage '$OOOintToSet'")
+	    $sb = [ScriptBlock]::Create("Set-MailboxAutoReplyConfiguration $($user.SamAccountName) -AutoReplyState enabled -ExternalAudience all -InternalMessage '$OOOInternal' -ExternalMessage '$OOOExternal'")
             $result= Invoke-Command -ScriptBlock $sb -ConnectionUri $psExchangeConnURI -ConfigurationName $psExchangeConfigName			
          if($result){
             Write-host "AutoReply set for user $user.DisplayName"
@@ -74,17 +56,20 @@ function Remove-HPUserGroups
 			Write-host "User does not have mailbox enabled."
 	   }
 
-	   #Write all group membership on notes section. ( to protect from accidental deletion)
+	#Write all group membership on notes section. ( to protect from accidental deletion)
 	Set-aduser -Identity $user.SamAccountName -replace @{info="Account Disabled On $(get-date) `r`n $membership"; msExchHideFromAddressLists="TRUE"}
     Move-ADObject -identity $user.distinguishedName -TargetPath $moveto
 	Disable-ADAccount -Identity $user.SamAccountName
-
-
 }
 
 
 $found=""
+
 $filter="(SAMaccountName -notlike '*Admin' -and enabled -eq '$true') "
+if($isadmin)
+{
+$filter="(enabled -eq '$true') "
+}
 
 if(!$LoginName ){
 $FirstName+="*"
@@ -99,8 +84,6 @@ else{
 
 
 $usersfound=@()
-#$found=Get-ADUser -filter {(displayName -like $usertofind -or SAMAccountID -like $usertofind -or lastName -like $usertofind)  -and (SAMaccountName -notlike "*Admin" -and Enabled -eq $True)} -Properties *
-$filter
 $found=Get-ADUser -filter $filter -Properties *
 
 if($found){
@@ -124,7 +107,7 @@ if($found){
 			$confirm =read-host "Are you sure you want to delete the following user? (y/n)"
 			if($confirm.ToUpper() -eq "Y"-or $confirm.ToUpper() -eq "YES"){
 
-				Remove-HPUserGroups $found[$choice-1]	
+				Remove-UserGroups $found[$choice-1]	
 				
 			}
 			else{ 
@@ -140,7 +123,7 @@ if($found){
 		$found|select DisplayName,Department,mail,whenCreated,Title,StreetAddress,State,Postalcode,info,DistinguishedName|fl
 	    $confirm=(Read-host "Are you sure you want to delete the following user? (y/n)")    
 		if($confirm.ToUpper() -eq "Y"-or $confirm.ToUpper() -eq "YES"){
-			Remove-HPUserGroups $found
+			Remove-UserGroups $found
 			
 		}
 	}
